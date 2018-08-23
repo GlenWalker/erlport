@@ -143,12 +143,12 @@ module Erlang
     private
 
     module_function
-    def setup port
+    def setup port, redirect_stdio
         @@port = port
         @@self = nil
         @@responses = Responses.new
-        @@message_id = MessageId.new
-        ErlPort::StdIO::redirect port
+        @@message_id = MessageId.new 
+        ErlPort::StdIO::redirect port if redirect_stdio
         set_default_encoder
         set_default_decoder
         set_default_message_handler

@@ -70,7 +70,7 @@ def main(argv=None):
     options, args = parser.parse_args(argv)
     port = Port(use_stdio=options.stdio, packet=options.packet,
         compressed=options.compressed, buffer_size=options.buffer_size)
-    erlang.setup(port)
+    erlang.setup(port, redirect_stdio=options.stdio)
 
 
 if __name__ == "__main__":

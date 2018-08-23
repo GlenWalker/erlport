@@ -38,7 +38,7 @@ class CommandLine
         options = parse
         port = ErlPort::ErlProto::Port.new(options.packet, options.stdio,
             options.compressed, nil, options.buffer_size)
-        ErlPort::Erlang.start port
+        ErlPort::Erlang.start port, options.stdio
     end
 
     private

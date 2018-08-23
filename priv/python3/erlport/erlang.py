@@ -259,11 +259,12 @@ def setup_api_functions(handler):
     set_default_decoder = handler.set_default_decoder
     set_default_message_handler = handler.set_default_message_handler
 
-def setup(port):
+def setup(port, redirect_stdio=True):
     from . import stdio
     global MessageHandler, setup
     handler = MessageHandler(port)
     setup_api_functions(handler)
-    stdio.redirect(port)
+    if redirect_stdio:
+        stdio.redirect(port)
     del MessageHandler, setup
     handler.start()
