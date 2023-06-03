@@ -26,6 +26,8 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 from optparse import OptionParser, OptionValueError
+import os
+import signal
 
 from erlport import erlang
 from erlport.erlproto import Port
@@ -74,4 +76,12 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        # Ensure Python exits without printing an error about unhandled
+        # KeyboardInterrupt, but still with an exitcode for SIGINT.
+        # Bug from 2004: http://bugs.python.org/issue1054041
+        # http://www.cons.org/cracauer/sigint.html
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        os.kill(os.getpid(), signal.SIGINT)
