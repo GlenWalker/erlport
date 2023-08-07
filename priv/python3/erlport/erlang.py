@@ -32,7 +32,7 @@ from traceback import extract_tb, format_list
 from threading import Lock
 import uuid
 
-from erlport import Atom
+from erlport import Atom, Function
 
 
 class Error(Exception):
@@ -182,10 +182,14 @@ class MessageHandler(object):
         self.port.write((Atom(b'M'), pid, message))
 
     def call(self, module, function, args):
-        if not isinstance(module, Atom):
-            raise ValueError(module)
-        if not isinstance(function, Atom):
-            raise ValueError(function)
+        if module is None:
+            if not isinstance(function, Function):
+                raise ValueError(function)
+        else:
+            if not isinstance(module, Atom):
+                raise ValueError(module)
+            if not isinstance(function, Atom):
+                raise ValueError(function)
         if not isinstance(args, list):
             raise ValueError(args)
         return self._call(module, function, args, Atom(b'N'))
@@ -201,9 +205,13 @@ class MessageHandler(object):
 
     def _call(self, module, function, args, context):
         mid = self.new_message_id()
-        self.port.write((Atom(b'C'), mid, module, function,
-                         # TODO: Optimize list(map())
-                         list(map(self.encoder, args)), context))
+        if module is None:
+            self.port.write((Atom(b'C'), mid, function,
+                             list(map(self.encoder, args)), context))
+        else:
+            self.port.write((Atom(b'C'), mid, module, function,
+                             # TODO: Optimize list(map())
+                             list(map(self.encoder, args)), context))
 
         response = self._receive(expect_id=mid)
 

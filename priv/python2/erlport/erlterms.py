@@ -259,6 +259,29 @@ class OpaqueObject(object):
         return "OpaqueObject(%r, %r)" % (self.data, self.language)
 
 
+class Function(object):
+    """Erlang function object."""
+
+    __slots__ = "data"
+
+    def __init__(self, data):
+        if type(data) is not str:
+            raise TypeError("data must be instance of str")
+        self.data = data
+
+    def __eq__(self, other):
+        return (type(self) == type(other) and self.data == other.data)
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __hash__(self):
+        return hash((self.__class__, self.data))
+
+    def __repr__(self):
+        return "Function(%r)" % (self.data, )
+
+
 _python = Atom("python")
 
 _int4_unpack = Struct(">I").unpack
@@ -299,7 +322,8 @@ def decode_term(string,
         signed_int4_unpack=_signed_int4_unpack, float_unpack=_float_unpack,
         double_bytes_unpack=_double_bytes_unpack,
         int4_byte_unpack=_int4_byte_unpack, Atom=Atom,
-        opaque=OpaqueObject.marker, decode_opaque=OpaqueObject.decode):
+        opaque=OpaqueObject.marker, decode_opaque=OpaqueObject.decode,
+        Function=Function):
     if not string:
         raise IncompleteData(string)
     tag = string[0]
@@ -430,6 +454,15 @@ def decode_term(string,
             if sign:
                 n = -n
         return n, tail[length:]
+    elif tag == "p":
+        # NEW_FUN_EXT
+        ln = len(string)
+        if ln < 5:
+            raise IncompleteData(string)
+        length = int4_unpack(string[1:5])[0] + 1
+        if ln < length:
+            raise IncompleteData(string)
+        return Function(string[1:length]), string[length:]
 
     raise ValueError("unsupported data: %r" % (string,))
 
@@ -465,8 +498,8 @@ def encode_term(term,
         array=array, unicode=unicode, Atom=Atom, str=str, map=map, float=float,
         ord=ord, dict=dict, True=True, False=False, dumps=dumps,
         PICKLE_PROTOCOL=PICKLE_PROTOCOL, OpaqueObject=OpaqueObject,
-        ImproperList=ImproperList, char_int4_pack=_char_int4_pack,
-        char_int2_pack=_char_int2_pack,
+        ImproperList=ImproperList, Function=Function,
+        char_int4_pack=_char_int4_pack, char_int2_pack=_char_int2_pack,
         char_signed_int4_pack=_char_signed_int4_pack, List=List,
         char_float_pack=_char_float_pack, char_2bytes_pack=_char_2bytes_pack,
         char_int4_byte_pack=_char_int4_byte_pack, python=_python):
@@ -544,6 +577,11 @@ def encode_term(term,
         return "d\0\11undefined"
     elif t is OpaqueObject:
         return term.encode()
+    elif t is Function:
+        length = len(term.data)
+        if length > 4294967295:
+            raise ValueError("invalid Function size: %r" % length)
+        return 'p' + term.data
     elif t is Map or t is dict:
         length = len(term)
         if length > 4294967295:

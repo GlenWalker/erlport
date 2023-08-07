@@ -125,6 +125,9 @@ init(Fun) when is_function(Fun, 0) ->
 handle_call(Call={call, _M, _F, _A, Options}, From, State=#state{})
         when is_list(Options) ->
     send_request(Call, From, Options, State);
+handle_call(Call={call, _F, _A, Options}, From, State=#state{})
+        when is_list(Options) ->
+    send_request(Call, From, Options, State);
 handle_call(Request, From, State) ->
     Error = {unknown_call, ?MODULE, Request, From},
     {reply, Error, State}.
@@ -136,6 +139,9 @@ handle_call(Request, From, State) ->
 handle_cast(Call={message, _Message}, State) ->
     send_request(Call, unknown, [], State);
 handle_cast(Call={call, _M, _F, _A, Options}, State)
+        when is_list(Options) ->
+    send_request(Call, unknown, Options, State);
+handle_cast(Call={call, _F, _A, Options}, State)
         when is_list(Options) ->
     send_request(Call, unknown, Options, State);
 handle_cast(stop, State) ->
@@ -248,6 +254,10 @@ spawn_call(Id, Module, Function, Args) ->
     spawn_link(fun () ->
         exit({Id, call_mfa(Module, Function, Args)})
         end).
+spawn_call(Id, Function, Args) ->
+    spawn_link(fun () ->
+        exit({Id, call_fa(Function, Args)})
+        end).
 
 %%
 %% @doc Check options for the call request
@@ -308,6 +318,9 @@ handle_message(Request, State) ->
 handle_incoming_message({'C', Id, Module, Function, Args, Context}, State)
         when is_atom(Module), is_atom(Function), is_list(Args) ->
     incoming_call(Id, Module, Function, Args, Context, State);
+handle_incoming_message({'C', Id, Function, Args, Context}, State)
+        when is_function(Function), is_list(Args) ->
+    incoming_call(Id, Function, Args, Context, State);
 handle_incoming_message({'M', Pid, Message}, State) ->
     send(Pid, Message, State);
 handle_incoming_message({'P', StdoutData}, State) ->
@@ -393,10 +406,31 @@ call_mfa(Module, Function, Args) ->
             Type:Reason:Trace ->
                 {error, {erlang, Type, Reason, Trace}}
         end.
+call_fa(Function, Args) ->
+        try {ok, apply(Function, Args)}
+        catch
+            error:{Language, Type, _Val, Trace}=Error
+                    when is_atom(Language) andalso is_atom(Type)
+                    andalso is_list(Trace) ->
+                {error, Error};
+            Type:Reason:Trace ->
+                {error, {erlang, Type, Reason, Trace}}
+        end.
 -else.
 %% OTP 20 or lower
 call_mfa(Module, Function, Args) ->
         try {ok, apply(Module, Function, Args)}
+        catch
+            error:{Language, Type, _Val, Trace}=Error
+                    when is_atom(Language) andalso is_atom(Type)
+                    andalso is_list(Trace) ->
+                {error, Error};
+            Type:Reason ->
+                Trace = erlang:get_stacktrace(),
+                {error, {erlang, Type, Reason, Trace}}
+        end.
+call_fa(Function, Args) ->
+        try {ok, apply(Function, Args)}
         catch
             error:{Language, Type, _Val, Trace}=Error
                     when is_atom(Language) andalso is_atom(Type)
@@ -420,6 +454,20 @@ incoming_call(Id, Module, Function, Args, _Context, State=#state{
             {stop, {duplicate_incoming_call, Id, Info}, State};
         error ->
             Pid = spawn_call(Id, Module, Function, Args),
+            Info = {Pid, erlport_utils:start_timer(Timeout,
+                {erlport_timeout, {in, Id}})},
+            Calls2 = orddict:store(Id, Info, Calls),
+            {noreply, State#state{calls=Calls2}}
+    end.
+incoming_call(Id, Function, Args, 'L', State) ->
+    handle_call_result(Id, call_fa(Function, Args), State);
+incoming_call(Id, Function, Args, _Context, State=#state{
+        timeout=Timeout, calls=Calls}) ->
+    case orddict:find(Id, Calls) of
+        {ok, {_Pid, _Timer}=Info} ->
+            {stop, {duplicate_incoming_call, Id, Info}, State};
+        error ->
+            Pid = spawn_call(Id, Function, Args),
             Info = {Pid, erlport_utils:start_timer(Timeout,
                 {erlport_timeout, {in, Id}})},
             Calls2 = orddict:store(Id, Info, Calls),

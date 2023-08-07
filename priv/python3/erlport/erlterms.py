@@ -1,9 +1,9 @@
 # Copyright (c) 2009-2015, Dmitry Vasiliev <dima@hlabs.org>
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #  * Redistributions of source code must retain the above copyright notice,
 #    this list of conditions and the following disclaimer.
 #  * Redistributions in binary form must reproduce the above copyright notice,
@@ -11,8 +11,8 @@
 #    and/or other materials provided with the distribution.
 #  * Neither the name of the copyright holders nor the names of its
 #    contributors may be used to endorse or promote products derived from this
-#    software without specific prior written permission. 
-# 
+#    software without specific prior written permission.
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -258,6 +258,29 @@ class OpaqueObject(object):
         return "OpaqueObject(%r, %r)" % (self.data, self.language)
 
 
+class Function(object):
+    """Erlang function object."""
+
+    __slots__ = "data"
+
+    def __init__(self, data):
+        if type(data) is not bytes:
+            raise TypeError("data must be instance of bytes")
+        self.data = data
+
+    def __eq__(self, other):
+        return (type(self) == type(other) and self.data == other.data)
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __hash__(self):
+        return hash((self.__class__, self.data))
+
+    def __repr__(self):
+        return "Function(%r)" % (self.data, )
+
+
 _python = Atom(b"python")
 
 _int4_unpack = Struct(b">I").unpack
@@ -429,6 +452,15 @@ def decode_term(string,
             if sign:
                 n = -n
         return n, tail[length:]
+    elif tag == 112:
+        # NEW_FUN_EXT
+        ln = len(string)
+        if ln < 5:
+            raise IncompleteData(string)
+        length = int4_unpack(string[1:5])[0] + 1
+        if ln < length:
+            raise IncompleteData(string)
+        return Function(string[1:length]), string[length:]
 
     raise ValueError("unsupported data: %r" % (string,))
 
@@ -464,7 +496,8 @@ def encode_term(term,
         str=str, Atom=Atom, bytes=bytes, map=map, float=float, dict=dict,
         true=True, false=False, dumps=dumps, PICKLE_PROTOCOL=PICKLE_PROTOCOL,
         OpaqueObject=OpaqueObject, List=List, ImproperList=ImproperList,
-        char_int4_pack=_char_int4_pack, char_int2_pack=_char_int2_pack,
+        Function=Function, char_int4_pack=_char_int4_pack,
+        char_int2_pack=_char_int2_pack,
         char_signed_int4_pack=_char_signed_int4_pack,
         char_float_pack=_char_float_pack, char_2bytes_pack=_char_2bytes_pack,
         char_int4_byte_pack=_char_int4_byte_pack, python=_python):
@@ -496,12 +529,12 @@ def encode_term(term,
     elif t is str:
         return encode_term(list(map(ord, term)))
     elif t is Atom:
-        return char_int2_pack(b"d", len(term)) + term
+        return char_int2_pack(b'd', len(term)) + term
     elif t is bytes:
         length = len(term)
         if length > 4294967295:
             raise ValueError("invalid binary length: %r" % length)
-        return char_int4_pack(b"m", length) + term
+        return char_int4_pack(b'm', length) + term
     # Must be before int type
     elif term is true:
         return b"d\0\4true"
@@ -527,16 +560,21 @@ def encode_term(term,
 
         length = len(b)
         if length <= 255:
-            return char_2bytes_pack(b"n", length, sign) + b
+            return char_2bytes_pack(b'n', length, sign) + b
         elif length <= 4294967295:
-            return char_int4_byte_pack(b"o", length, sign) + b
+            return char_int4_byte_pack(b'o', length, sign) + b
         raise ValueError("invalid integer value with length: %r" % length)
     elif t is float:
-        return char_float_pack(b"F", term)
+        return char_float_pack(b'F', term)
     elif term is None:
         return b"d\0\11undefined"
     elif t is OpaqueObject:
         return term.encode()
+    elif t is Function:
+        length = len(term.data)
+        if length > 4294967295:
+            raise ValueError("invalid Function size: %r" % length)
+        return b'p' + term.data
     elif t is Map or t is dict:
         length = len(term)
         if length > 4294967295:
@@ -548,7 +586,7 @@ def encode_term(term,
         length = len(term)
         if length > 4294967295:
             raise ValueError("invalid improper list length: %r" % length)
-        header = char_int4_pack(b"l", length)
+        header = char_int4_pack(b'l', length)
         return (header + b"".join(map(encode_term, term))
             + encode_term(term.tail))
 
