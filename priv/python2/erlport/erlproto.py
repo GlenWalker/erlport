@@ -78,6 +78,8 @@ class Port(object):
         except OSError, why:
             if why.errno in (errno.EPIPE, errno.EINVAL):
                 raise EOFError()
+            if why.errno == errno.EINTR:
+                return ''
             raise
         if not buf:
             raise EOFError()
