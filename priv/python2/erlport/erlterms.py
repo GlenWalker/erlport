@@ -599,6 +599,6 @@ def encode_term(term,
 
     try:
         data = dumps(term, PICKLE_PROTOCOL)
-    except:
+    except Exception:
         raise ValueError("unsupported data type: %s" % type(term))
     return OpaqueObject(data, python).encode()

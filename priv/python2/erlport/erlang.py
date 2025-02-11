@@ -240,7 +240,7 @@ class MessageHandler(object):
     def _call_with_error_handler(self, mid, function, *args):
         try:
             function(*args)
-        except:
+        except Exception:
             t, val, tb = exc_info()
             exc = Atom("%s.%s" % (t.__module__, t.__name__))
             exc_tb = extract_tb(tb)
